@@ -10,3 +10,5 @@
 3. http块
   1. http全局块
   2. server块（listen，server\_name, location）
+
+## 常用命令
