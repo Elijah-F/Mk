@@ -69,7 +69,7 @@ Docker 是基于Go语言开发的开源项目。
 
 ## Docker 基本组成
 
-<img src="Docker.assets/image-20200915165553187.png" alt="image-20200915165553187" style="zoom:80%;" />
+![image-20200916173329925](Docker.assets/image-20200916173329925.png)
 
 **镜像（image）**
 
@@ -272,9 +272,259 @@ docker cp 容器id:容器内路径 目标主机路径  # 只要容器存在即�
 
 <img src="Docker.assets/image-20200915204510413.png" alt="image-20200915204510413" style="zoom: 80%;" />
 
+## 例：安装 Nginx
+
+```shell
+# 1、搜索镜像 或者去Docker Hub上搜索
+docker search nginx
+
+# 2、下载镜像
+docker pull nginx
+
+# 3、运行测试
+# 		-d 后台运行
+# 		--name 给容器命名
+#		-p 宿主机端口:容器内端口
+docker run -d --name nginx01 -p 3344:80 nginx
+
+# 4、进入容器
+docker exec -it nginx01 /bin/bash
+whereis nginx
+```
+
+**端口暴露的概念**
+
+<img src="Docker.assets/image-20200916152137252.png" alt="image-20200916152137252" style="zoom:80%;" />
+
+# Docker 镜像
+
+## 镜像是什么
+
+镜像是一种轻量级、可执行的独立软件包，用来打包软件运行环境和基于运行环境开发的软件，它包含运行某个软件所需的所有内容，包括代码、运行时的库、环境变量和配置文件。
+
+## Docker镜像加载原理
+
+> UnionFS（联合文件系统）
+
+UnionFS（联合文件系统）：Union文件系统是一种分层，轻量级并且高性能的文件系统，它支持对文件系统的修改作为一次提交来一层层的叠加，同时可以将不同目录挂载到同一个虚拟文件系统下。Union文件系统是 Docker 镜像的基础。镜像可以通过分层来进行继承，基于基础镜像（没有父镜像），可以制作各种具体的应用镜像。
+
+特性：一次同时加载多个文件系统，但从外面看来，只能看到一个文件系统，联合加载会把各层文件系统叠加起来，这样最终的文件系统会包含所有底层的文件和目录。
 
 
 
+> Docker 镜像加载原理
+
+docker 的镜像实际上是由一层一层的文件系统组成，这种层级的文件系统就是 UnionFS。
+
+bootfs（boot file system）主要包含bootloader和kernel，bootloader主要是引导加载kernel，Linux刚启动时就会加载bootfs文件系统，在Docker镜像的最底层是bootfs。这一层与我们典型的Linux/Unix系统时一样的，包括boot加载器和内核。当boot加载完成之后整个内核就都在内存中了，此时内存的使用权转交给内核，此时系统也会卸载bootfs。
+
+rootfs（root file system）在bootfs之上，包含的就是典型Linux系统的/dev，/prov，/bin，/etc等标准目录和文件。rootfs就是各种不同的操作系统发行版，比如Ubuntu，Centos等。
+
+对于一个精简的OS，rootfs可以很小，只需要包含最基本的命令，工具和程序库就可以。因为底层直接用Host的Kernel，自己只需要提供rootfs就可以了。由此可见，对于不同的linux发行版，bootfs基本是一致的，rootfs会有差别，bootfs可以共用。
+
+## 分层理解
+
+> 分层的镜像
+
+下载一个镜像时，注意观察下载的日志输出，可以看到是一层一层的在下载！
+
+```shell
+root@17:45:~ # docker pull redis
+Using default tag: latest
+latest: Pulling from library/redis
+d121f8d1c412: Pull complete 
+2f9874741855: Pull complete 
+d92da09ebfd4: Pull complete 
+bdfa64b72752: Pull complete 
+e748e6f663b9: Pull complete 
+eb1c8b66e2a1: Pull complete 
+Digest: sha256:1cfb205a988a9dae5f025c57b92e9643ec0e7ccff6e66bc639d8a5f95bba928c
+Status: Downloaded newer image for redis:latest
+docker.io/library/redis:latest
+```
+
+思考：为什么Docker镜像要采用这种分层的结构呢？
+
+最大的好处，资源共享。比如有多个镜像都从相同的Base镜像构建而来，那么宿主机只需在磁盘上保留一份Base镜像，同时内存中与只需要架子啊一份Base镜像，这样就可以为所有的容器服务了，而且镜像的每一层都可以被共享。
+
+**查看镜像分层的方式可以通过以下命令实现：**
+
+```shell
+docker image inspect 镜像
+root@17:47:~ # docker image inspect redis:latest
+[
+    {
+        "Id": "sha256:84c5f6e03bf04e139705ceb2612ae274aad94f8dcf8cc630fbf6d91975f2e1c9",
+        "RepoTags": [
+            "redis:latest"
+        ],
+        "RepoDigests": [
+            "redis@sha256:1cfb205a988a9dae5f025c57b92e9643ec0e7ccff6e66bc639d8a5f95bba928c"
+        ],
+        "Parent": "",
+        "Comment": "",
+        "Created": "2020-09-10T19:14:19.090647481Z",
+        "Container": "01e8a1053cea8d8adc30b6f9c0e1d84a9c76535f6b0896c8fcff25d54c9c0429",
+        "ContainerConfig": {
+            "Hostname": "01e8a1053cea",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "6379/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "GOSU_VERSION=1.12",
+                "REDIS_VERSION=6.0.8",
+                "REDIS_DOWNLOAD_URL=http://download.redis.io/releases/redis-6.0.8.tar.gz",
+                "REDIS_DOWNLOAD_SHA=04fa1fddc39bd1aecb6739dd5dd73858a3515b427acd1e2947a66dadce868d68"
+            ],
+            "Cmd": [
+                "/bin/sh",
+                "-c",
+                "#(nop) ",
+                "CMD [\"redis-server\"]"
+            ],
+            "ArgsEscaped": true,
+            "Image": "sha256:194e5decbc63d8d28f685b6899326cc681b1e2265dd556d96ee12226400ca6d5",
+            "Volumes": {
+                "/data": {}
+            },
+            "WorkingDir": "/data",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": {}
+        },
+        "DockerVersion": "18.09.7",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "6379/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "GOSU_VERSION=1.12",
+                "REDIS_VERSION=6.0.8",
+                "REDIS_DOWNLOAD_URL=http://download.redis.io/releases/redis-6.0.8.tar.gz",
+                "REDIS_DOWNLOAD_SHA=04fa1fddc39bd1aecb6739dd5dd73858a3515b427acd1e2947a66dadce868d68"
+            ],
+            "Cmd": [
+                "redis-server"
+            ],
+            "ArgsEscaped": true,
+            "Image": "sha256:194e5decbc63d8d28f685b6899326cc681b1e2265dd556d96ee12226400ca6d5",
+            "Volumes": {
+                "/data": {}
+            },
+            "WorkingDir": "/data",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 104192177,
+        "VirtualSize": 104192177,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/7ad559b616de8540bf88462236cd8a45343701a711264a1d975c68b5d2cef86f/diff:/var/lib/docker/overlay2/a6244a514b245e07760e8d703c64d178832c31b7b35751a73a385ff2bd009d05/diff:/var/lib/docker/overlay2/bcbac6f12038a6ef6c1a620b6f82229f2cc416b1f169d909d3d602733816a347/diff:/var/lib/docker/overlay2/ab8dc853b381caa845d9b3bea89994deedb586a9f11c72fd61bae26aa21f95a5/diff:/var/lib/docker/overlay2/99995f944243486884288150b0e8471026db5203f768ae9a58fc46f050ef077f/diff",
+                "MergedDir": "/var/lib/docker/overlay2/5e0870f591bb7582d3d024a603b48f32a7b57492ef26544b7d4fc2c8aaa6e3f8/merged",
+                "UpperDir": "/var/lib/docker/overlay2/5e0870f591bb7582d3d024a603b48f32a7b57492ef26544b7d4fc2c8aaa6e3f8/diff",
+                "WorkDir": "/var/lib/docker/overlay2/5e0870f591bb7582d3d024a603b48f32a7b57492ef26544b7d4fc2c8aaa6e3f8/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:07cab433985205f29909739f511777a810f4a9aff486355b71308bb654cdc868",
+                "sha256:45b5e221b6729773b50b4fc89e83a623f9f63ddf37e37078d5f197811db6177d",
+                "sha256:7fb1fa4d4022ba2387d0df7820fa41c797eeda6f1192920da8cb99c6475dd9d1",
+                "sha256:47d8fadc671445422662d5a25e09b2fabd2a77c7da4338ab3f817592fd60c84b",
+                "sha256:ea96cbf71ac4d770813f8fd209a20ddb3b81c69992be2c0c3e1d1a4b9fb0da1a",
+                "sha256:2e9c060aef92b6b958bee61fbf5f239443c629e6a62f1103c3ada7deb10aa543"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]
+```
+
+> 特点
+
+Docker 镜像都是只读的，当容器启动时，一个新的可写层被加载到镜像的顶部。
+
+这一层就是通常说的容器层，容器之下都是镜像层。
+
+![image-20200916180149923](Docker.assets/image-20200916180149923.png)
+
+## commit镜像
+
+```shell
+# 命令和git原理类似
+docker commit -m="提交的信息描述" -a="作者" 容器id 目标镜像名:[TAG]
+```
+
+
+
+# 容器数据卷
+
+## 什么是容器数据卷
+
+docker 的理念：将应用和环境打包成一个镜像！
+
+数据？如果数据都在容器中，那么容器删除，将会导致数据的丢失！==需求：数据可以持久化==
+
+MySQL，容器删了就相当于删库跑路了！==需求：MySQL的数据可以存储到本地==
+
+容器之间可以有一个数据共享的技术！将Docker中产生的数据，同步到本地！
+
+这就是卷技术！
+
+简单理解就是，目录的挂载，将容器内的目录，挂载到Linux上面！
+
+**总结一句话：容器的持久化和同步操作！容器间也是可以数据共享的！**
+
+
+
+## 使用数据卷
+
+> 方式一：直接使用命令来挂载 -v
+
+```shell
+docker run -it -v 宿主机目录:容器内目录
+```
+
+
+
+
+
+# DockerFile
+
+
+
+# Docker 网络
 
 
 
