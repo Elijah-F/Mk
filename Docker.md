@@ -69,7 +69,7 @@ Docker 是基于Go语言开发的开源项目。
 
 ## Docker 基本组成
 
-![image-20200916173329925](Docker.assets/image-20200916173329925.png)
+<img src="Docker.assets/image-20200916173329925.png" alt="image-20200916173329925" style="zoom:80%;" />
 
 **镜像（image）**
 
@@ -516,11 +516,218 @@ MySQL，容器删了就相当于删库跑路了！==需求：MySQL的数据可�
 docker run -it -v 宿主机目录:容器内目录
 ```
 
+## 实战：安装MySQL
 
+思考：MySQL 的数据持久化问题！
+
+```shell
+# 获取镜像
+docker pull mysql:5.7
+
+# 运行容器，需要做数据挂载（需要注意：配置密码）
+# 官方测试：docker run --name some-mysql -e MYSQL_ROOT_PASSWORD=my-secret-pw -d mysql:tag
+
+# 启动
+docker run -d -p 3344:3306 -v /root/mysql/conf:/etc/mysql/conf.d -v /root/mysql/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=888888 --name mysql01 mysql:5.7
+```
+
+## 具名和匿名挂载
+
+```shell
+# 匿名挂载
+# 我们在 -v 挂载时只写了容器内的路径，没有写容器外的路径，这种就是匿名挂载
+root@15:58:~/mysql # docker run -d -P --name nginx01 -v /etc/nginx nginx
+
+# 查看所有的 volume 的情况
+root@15:58:~/mysql # docker volume ls
+DRIVER              VOLUME NAME
+local               81ce29c3611bb0de23caa07c5956796615ce1f8d6927c6bd3c3be4c95e2710ac
+
+
+# 具名挂载
+# 通过 -v 卷名:卷内路径
+root@15:58:~/mysql # docker run -d -P --name nginx02 -v juming_nginx:/etc/nginx nginx
+d7575207001def4691786c06574d551d011065d0edb833f5b16bfad838c4ab62
+root@16:03:~/mysql # docker volume ls
+DRIVER              VOLUME NAME
+local               81ce29c3611bb0de23caa07c5956796615ce1f8d6927c6bd3c3be4c95e2710ac
+local               juming_nginx
+
+# 查看一下这个卷（juming_nginx)
+root@16:05:~/mysql # docker volume inspect juming_nginx
+[
+    {
+        "CreatedAt": "2020-09-17T16:03:08+08:00",
+        "Driver": "local",
+        "Labels": null,
+        "Mountpoint": "/var/lib/docker/volumes/juming_nginx/_data",
+        "Name": "juming_nginx",
+        "Options": null,
+        "Scope": "local"
+    }
+]
+```
+
+所有的 Docker 容器内的卷，没有指定目录的情况下都是在`/var/lib/docker/volumes/xxxx/_data`下
+
+我们通过具名挂载可以方便的找到我们的卷，通常情况下使用`具名挂载`
+
+```shell
+-v 容器内路径			   # 匿名挂载
+-v 卷名:容器内路径			  # 具名挂载
+-v /宿主机路径:容器内路径		# 指定路径挂载
+```
+
+**拓展：**
+
+```shell
+# 通过 -v 容器内路径:ro/rw 来改变读写权限
+ro	# 只读
+rw	# 可读可写
+
+# 一旦设置了容器权限，容器对我们挂载出来的内容就有限定了
+docker run -d -P --name nginx02 -v juming_nginx:/etc/nginx:ro nginx
+docker run -d -P --name nginx02 -v juming_nginx:/etc/nginx:rw nginx
+
+# ro 说明挂载的路径内容只能通过宿主机来操作，容器内无法操作
+```
+
+
+
+## 初始DockerFile
+
+DockerFile 就是用来构建 docker 镜像的构建文件！命令脚本！
+
+通过这个脚本可以生成镜像，镜像是一层一层的，脚本的每个命令就是一层！
+
+```shell
+# 创建dockerfile文件，文件中的内容：指令（大写） 参数
+root@16:29:~ # cat DockerFile 
+FROM centos
+
+VOLUME ["volume01", "volume02"]
+
+CMD echo "====[end]===="
+
+CMD /bin/bash
+
+# 构建镜像，这里的每个命令就是一层
+root@16:30:~ # docker build -f /root/DockerFile -t my_centos:1.0 .
+Sending build context to Docker daemon  620.3MB
+Step 1/4 : FROM centos
+latest: Pulling from library/centos
+3c72a8ed6814: Pull complete 
+Digest: sha256:76d24f3ba3317fa945743bb3746fbaf3a0b752f10b10376960de01da70685fbd
+Status: Downloaded newer image for centos:latest
+ ---> 0d120b6ccaa8
+Step 2/4 : VOLUME ["volume01", "volume02"]
+ ---> Running in a3e501f32e2d
+Removing intermediate container a3e501f32e2d
+ ---> 81b2f55b7432
+Step 3/4 : CMD echo "====[end]===="
+ ---> Running in 61a40f657afb
+Removing intermediate container 61a40f657afb
+ ---> 61e6738c9888
+Step 4/4 : CMD /bin/bash
+ ---> Running in 04c55fd300da
+Removing intermediate container 04c55fd300da
+ ---> 9b91faa94502
+Successfully built 9b91faa94502
+Successfully tagged my_centos:1.0
+
+# 启动
+root@16:31:~ # docker images
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+my_centos           1.0                 9b91faa94502        4 minutes ago       215MB
+
+root@16:36:~ # docker run -it 9b91faa94502 /bin/bash
+[root@8a120c23454c /]# ls
+bin  dev  etc  home  lib  lib64  lost+found  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var  volume01	volume02
+
+# volume01 volume02 是我们构建镜像的时候自动挂载的（匿名挂载），因此宿主机一定有一个对应的目录
+root@16:41:~ # docker inspect 9399446701df
+[
+    	...
+    	
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "0d87b51d260c0ed19a91f5481a0140e347cff6e0d6a650999a855e29ec65677e",
+                "Source": "/var/lib/docker/volumes/0d87b51d260c0ed19a91f5481a0140e347cff6e0d6a650999a855e29ec65677e/_data",
+                "Destination": "volume01",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            },
+            {
+                "Type": "volume",
+                "Name": "1da3deec8684def28405c6c5e4a9b5cb719fb86c2ab8553f719e434cf5b67d70",
+                "Source": "/var/lib/docker/volumes/1da3deec8684def28405c6c5e4a9b5cb719fb86c2ab8553f719e434cf5b67d70/_data",
+                "Destination": "volume02",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        
+        ...
+]
+```
+
+## 数据卷容器
+
+多个 MySQL 同步数据！
+
+<img src="Docker.assets/image-20200917170632051.png" alt="image-20200917170632051" style="zoom:80%;" />
+
+```shell
+# 使用刚刚生成的镜像来创建容器，--volumes-from 同步数据，docker01 就是数据卷容器
+# volume01 volume02 两个目录对于三个容器来说是共享的（双向拷贝）
+# 此时即使docker01被删除，docker02和docker03中的数据不会丢失
+root@17:08:~ # docker run -it --name docker01 9b91faa94502
+root@17:10:~ # docker run -it --name docker02 --volumes-from docker01 9b91faa94502
+root@17:10:~ # docker run -it --name docker03 --volumes-from docker01 9b91faa94502
+```
+
+**结论：**
+
+容器之间配置信息的传递；数据卷容器的生命周期一直持续到没有容器使用为止。
+
+但是一旦持久化到本地，本地的数据是不会被删除的。
 
 
 
 # DockerFile
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
