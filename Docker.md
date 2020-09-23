@@ -701,37 +701,187 @@ root@17:10:~ # docker run -it --name docker03 --volumes-from docker01 9b91faa945
 
 # DockerFile
 
+## 介绍
 
+DockerFile 使用来构建 Docker 镜像的文件！命令参数脚本！
 
+**构建步骤：**
 
+1. 编写一个DockerFile 文件
+   1. docker build 构建成为一个镜像
+   2. docker run 运行镜像
+   3. docker push 发布镜像（DockerHub，阿里云镜像库）
 
+## DockerFile 构建过程
 
+**基础知识**
 
+1. 每个保留关键字（指令）都必须是大写
+2. 从上到下顺序执行
+3. \# 表示注释
+4. 每一个指定都会创建一个新的镜像层，并提交！
 
+<img src="Docker.assets/image-20200918172713076.png" alt="image-20200918172713076" style="zoom:80%;" />
 
+**步骤：开发，部署，运维**
 
+DockerFile：构建文件，定义了一切的步骤，源代码。
 
+DockerImages：通过 DockerFile 构建生成的镜像，最终发布和运行的产品。
 
+DockerContainer：容器就是镜像运行起来提供服务。
 
+## DockerFile 指令
 
+```shell
+FROM		# 基础镜像，一切从这里开始构建
+MAINTAINER	# 镜像是谁写的，姓名+邮箱
+RUN			# 镜像构建的时候需要运行的命令
+ADD			# 添加内容
+WORKDIR		# 镜像的工作目录
+VOLUME		# 挂载的目录
+EXPOSE		# 暴露端口配置
+CMD			# 指定这个容器启动的时候要运行的命令，只有最后一个会生效，可被替代
+ENTRYPOINT	# 指定这个容器启动的时候要运行的命令，可以追加指令
+ONBUILD		# 当构建一个被继承的 DockerFile 这个时候就会运行 ONBUILD 指令。触发指令
+COPY		# 类似ADD，将文件拷贝到镜像中
+ENV			# 构建的时候设置环境变量
+```
 
+## 实战测试
 
+DockerHub 的 99% 镜像都是从这个基础镜像过来的 `FROM scratch`，然后添加需要的软件和配置来进行构建
 
+```dockerfile
+# centos7 官方的dockerfile
+FROM scratch
+ADD centos-7-x86_64-docker.tar.xz /
 
+LABEL \
+    org.label-schema.schema-version="1.0" \
+    org.label-schema.name="CentOS Base Image" \
+    org.label-schema.vendor="CentOS" \
+    org.label-schema.license="GPLv2" \
+    org.label-schema.build-date="20200809" \
+    org.opencontainers.image.title="CentOS Base Image" \
+    org.opencontainers.image.vendor="CentOS" \
+    org.opencontainers.image.licenses="GPL-2.0-only" \
+    org.opencontainers.image.created="2020-08-09 00:00:00+01:00"
 
+CMD ["/bin/bash"]
+```
 
+> 创建一个自己的centos
 
+```shell
+# 1、编写 DockerFile 文件
+root@18:01:~/docker # cat dockerfile 
+FROM centos
+MAINTAINER fuck<2357489835@qq.com>
 
+ENV MYPATH /usr/local
+WORKDIR $MYPATH
 
+RUN yum -y install vim
 
+EXPOSE 80
 
+CMD echo $MYPATH
+CMD echo "=====end====="
+CMD /bin/bash
 
+# 2、通过这个文件构建镜像
+# 	 docker build -f dockerfile路径 -t 镜像名:[tag]
+root@18:03:~/docker # docker build -f /root/docker/dockerfile -t fuck_centos:0.1 .
 
+# 测试：当前工作目录为/usr/local，存在vim编辑器，echo $MYPATH
+root@18:06:~/docker # docker run -it fuck_centos:0.1
+```
 
+> CMD 和 ENTRYPOINT 区别
+
+```shell
+CMD			# 指定这个容器启动的时候要运行的命令，只有最后一个会生效，可被替代
+ENTRYPOINT	# 指定这个容器启动的时候要运行的命令，可以追加指令
+```
+
+## 发布镜像
+
+> DockerHub / 阿里云镜像服务
+
+```shell
+root@13:26:~ # docker login --help
+
+Usage:	docker login [OPTIONS] [SERVER]
+
+Log in to a Docker registry.
+If no server is specified, the default is defined by the daemon.
+
+Options:
+  -p, --password string   Password
+      --password-stdin    Take the password from stdin
+  -u, --username string   Username
+  
+# docker push   # 一定要带标签
+```
+
+## 小结
+
+<img src="Docker.assets/image-20200923135015249.png" alt="image-20200923135015249" style="zoom:80%;" />
 
 
 
 # Docker 网络
+
+## 理解 Docker0
+
+> 测试
+
+```shell
+root@13:26:~ # ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo		### 本机回环地址
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 00:16:3e:03:d4:59 brd ff:ff:ff:ff:ff:ff
+    inet 172.26.226.109/20 brd 172.26.239.255 scope global dynamic eth0		### 阿里云内网地址
+       valid_lft 303097174sec preferred_lft 303097174sec
+3: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:4c:dd:8f:04 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0			### docker0 地址
+       valid_lft forever preferred_lft forever
+```
+
+
+
+
+
+
+
+
+
+
+
+# Docker Compose
+
+
+
+
+
+# Docker Swarm
+
+
+
+
+
+# CI/CD 之 Jenkins
+
+
+
+
+
+
 
 
 
