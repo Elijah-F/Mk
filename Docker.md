@@ -853,11 +853,122 @@ root@13:26:~ # ip addr
        valid_lft forever preferred_lft forever
 ```
 
+```shell
+# 运行两个docker容器
+root@15:28:~ # docker run -it -P --name centos01 centos
+root@15:28:~ # docker run -it -P --name centos02 centos
+
+# 在本机ip addr 会发现多出了两张网卡
+root@15:30:~ # ip addr
+...
+3: docker0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:4c:dd:8f:04 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+43: veth4d49e43@if42: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP 
+    link/ether 72:79:18:83:90:8b brd ff:ff:ff:ff:ff:ff link-netnsid 0
+47: vethd0e8202@if46: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP 
+    link/ether 02:28:be:a7:e7:3e brd ff:ff:ff:ff:ff:ff link-netnsid 1
+
+# 容器内部 ip addr，网卡与本机多出的两张网卡一一对应
+root@15:30:~ # docker exec -it centos01 ip addr
+...
+       valid_lft forever preferred_lft forever
+42: eth0@if43: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+root@15:33:~ # docker exec -it centos02 ip addr
+...
+46: eth0@if47: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:ac:11:00:03 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.3/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+
+# linux 本机可以ping通容器内部，容器之间也可以互相ping，此时linux充当路由器的作用来进行转发
+root@15:38:~ # ping 172.17.0.2
+root@15:41:~ # ping 172.17.0.3
+root@15:41:~ # docker exec -it centos01 ping 172.17.0.3
+```
+
+<img src="Docker.assets/image-20201009160102482.png" alt="image-20201009160102482" style="zoom:80%;" />
+
+## --link
+
+```shell
+# 通过--link，在启动容器的时候，在/etc/hosts中添加一个映射，从而使用 ping+容器名 可以ping通
+root@16:12:~ # docker run -it -P --name centos03 --link centos02 centos
+[root@2d0f12fcb3dc /]# ping centos02
+PING centos02 (172.17.0.3) 56(84) bytes of data.
+64 bytes from centos02 (172.17.0.3): icmp_seq=1 ttl=64 time=0.094 ms
+64 bytes from centos02 (172.17.0.3): icmp_seq=2 ttl=64 time=0.067 ms
+```
+
+## 自定义网络
+
+```shell
+# 查看所有的docker网络
+root@16:16:~ # docker network ls
+NETWORK ID          NAME                DRIVER              SCOPE
+fa1185c12269        bridge              bridge              local
+73fdb2fac0e1        host                host                local
+d4cef0c91ebf        none                null                local
+```
+
+**网络模式**
+
+bridge：桥接模式，docker默认！
+
+none：不配置网络！
+
+host：和宿主机共享网络！
+
+container：容器内网络连通！
+
+**测试**
+
+```shell
+# 直接使用启动命令默认带有参数 --net bridge，也是就docker0
+root@16:30:~ # docker run -it -P --name test-centos centos
+root@16:30:~ # docker run -it -P --name test-centos --net bridge centos
+
+# docker0 特点：默认不能使用域名访问，可以使用--link来打通连接！
+# 也可以自定义一个自己的网络
+root@16:33:~ # docker network create --driver bridge --subnet 192.168.0.0/16 --gateway 192.168.0.1 mynet
+
+root@16:35:~ # docker network ls
+root@16:35:~ # docker network inspect mynet
+
+# 启动两个容器，并查看
+root@16:37:~ # docker run -it -P --name centos-net01 --net mynet centos
+root@16:37:~ # docker run -it -P --name centos-net02 --net mynet centos
+root@16:38:~ # docker network inspect mynet
+
+# 自定义的网络是可以通过域名直接访问的
+root@16:39:~ # docker exec -it centos-net01 ping centos-net02
+root@16:40:~ # docker exec -it centos-net01 ping 192.168.0.3
+```
 
 
 
+## 网络连通
 
+```shell
+root@16:37:~ # docker run -it -P --name centos-net01 --net mynet centos      //192.168.0.2
+root@16:37:~ # docker run -it -P --name centos-net02 --net mynet centos      //192.168.0.3
+root@16:50:~ # docker run -it --name centos01 centos						 //172.17.0.2
 
+## ping 不通
+root@16:51:~ # docker exec -it centos01 ping 192.168.0.2
+
+## 将centos01 和mynet 打通
+## centos01容器将会拥有两个ip（容器和网卡进行打通，网卡和网卡是不能打通的）
+root@16:55:~ # docker network connect mynet centos01
+root@16:55:~ # docker exec -it centos01 ping 192.168.0.2
+root@16:56:~ # docker network inspect mynet
+```
+
+<img src="Docker.assets/image-20201009165007709.png" alt="image-20201009165007709" style="zoom:80%;" />
 
 
 
