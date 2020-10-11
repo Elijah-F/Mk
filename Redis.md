@@ -93,41 +93,87 @@ Redis会周期性的把更新的数据写入磁盘或者把修改操作写入追
 redis 默认不是后台启动的，修改配置文件将 daemonize no 改为 yes
 
 ```shell
-redis-server ./redis.conf   # 使用自己的配置文件
-redis-cli -p 7379			# 连接:6379 默认端口号
-set name fuck
-get name
+λ redis-server redis.conf     # 使用自己的配置文件
+λ redis-cli -p 7379           # 连接:6379 默认端口号
+127.0.0.1:6379> ping
+PONG
+127.0.0.1:6379> set name fuck
+OK
+127.0.0.1:6379> get name
+"fuck"
+127.0.0.1:6379> keys *
+1) "name"
+127.0.0.1:6379> shutdown
+not connected> exit
 ```
 
-
-
 ## redis-benchmark
+redis-benchmark 是一个压力测试工具！
+```shell
+# 测试: 100个并发连接，10万个请求
+λ redis-benchmark -h localhost -p 6379 -c 100 -n 100000
+...
+100.00% <= 2 milliseconds
+78247.26 requests per second
+
+====== SET ======
+  100000 requests completed in 1.24 seconds    ## 对10万个请求进行写入测试
+  100 parallel clients                         ## 100个并发连接
+  3 bytes payload                              ## 每次写入3个字节
+  keep alive: 1                         ## 只有一台服务器来处理这些请求,单机性能
+  host configuration "save": 900 1 300 10 60 10000
+  host configuration "appendonly": no
+  multi-thread: no
+
+97.93% <= 1 milliseconds
+99.94% <= 2 milliseconds
+100.00% <= 3 milliseconds
+80971.66 requests per second                   ## 每秒处理的请求数量
+
+====== GET ======
+  100000 requests completed in 1.27 seconds
+  100 parallel clients
+  3 bytes payload
+  ...
+```
 
 ## 基础知识
+> Redis 有16个数据库, 默认使用第0个。
 
-Redis 默认有16个数据库。
+```shell
+127.0.0.1:6379> select 3          ## 切换数据库
+OK
+127.0.0.1:6379[3]> DBSIZE         ## 查看数据库大小
+(integer) 0
+127.0.0.1:6379[3]> SET name fuck
+OK
+127.0.0.1:6379[3]> KEYS *         ## 查看所有的key
+1) "name"
+127.0.0.1:6379[3]> FLUSHDB        ## 清空当前数据库
+OK
+127.0.0.1:6379[3]> KEYS *
+(empty array)
+127.0.0.1:6379[3]> FLUSHALL       ## 清空全部数据库
+OK
+127.0.0.1:6379> move name 1
+(integer) 1
+127.0.0.1:6379> EXISTS name       ## 判断是否存在
+(integer) 0
+127.0.0.1:6379> EXPIRE name 5     ## 设置数据的过期时间
+(integer) 1
+127.0.0.1:6379> ttl name          ## 查看剩余的过期时间
+```
 
+> Redis 是单线程的!
 
+Redis是很快的，官方表示，Redis是基于内存的操作，CPU并不是Redis的性能瓶颈，Redis的瓶颈是根据机器的内存和网络带宽，既然可以使用单线程来实现，就使用单线程了！
 
+Redis 是 C 语言写的，官方提供的数据为 100000+ QPS，完全不比同样是使用key-value的Memecache差！
 
+> Redis 为什么单线程还这么快？
 
+核心: Redis 是将所有的数据全部放在内存中的，所以说使用单线程效率就是最高的，多线程会存在CPU上下文切换，反而耗时。对于内存系统来说，如果没有上下文切换，那么效率就是最高的！
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# 五大数据类型
+## Redis-Key
 
