@@ -481,3 +481,194 @@ OK
 1) "world"
 ###################################################################################
 ```
+
+# Zset(有序集合)
+> 在 set 的基础上，增加了一个值，zset k1 score v1
+
+```shell
+###################################################################################
+127.0.0.1:6379> ZADD myset 1 one                       ## 添加
+(integer) 1
+127.0.0.1:6379> ZADD myset 2 two
+(integer) 1
+127.0.0.1:6379> ZADD myset 3 three
+(integer) 1
+127.0.0.1:6379> ZRANGE myset 0 -1                      ## 查看所有元素
+1) "one"
+2) "two"
+3) "three"
+###################################################################################
+127.0.0.1:6379> ZADD salary 2000 xiaohong
+(integer) 1
+127.0.0.1:6379> ZADD salary 5000 xiaozhang
+(integer) 1
+127.0.0.1:6379> ZADD salary 1000 xiaowang
+(integer) 1
+127.0.0.1:6379> ZRANGEBYSCORE salary -inf +inf       ## 升序排序, 范围[-inf,+inf]
+1) "xiaowang"
+2) "xiaohong"
+3) "xiaozhang"
+127.0.0.1:6379> ZREVRANGEBYSCORE salary +inf -inf    ## 降序排序
+1) "xiaozhang"
+2) "xiaohong"
+3) "xiaowang"
+127.0.0.1:6379> ZRANGEBYSCORE salary -inf +inf withscores    ## 升序,附带score
+1) "xiaowang"
+2) "1000"
+3) "xiaohong"
+4) "2000"
+5) "xiaozhang"
+6) "5000"
+127.0.0.1:6379> ZRANGEBYSCORE salary -inf 2500 withscores    ## [-inf,2500]
+1) "xiaowang"
+2) "1000"
+3) "xiaohong"
+4) "2000"
+127.0.0.1:6379> ZCOUNT salary 1000 3000                      ## 获取薪水在指定区间的成员数量
+(integer) 2
+###################################################################################
+127.0.0.1:6379> ZRANGE myset 0 -1
+1) "one"
+2) "two"
+3) "three"
+127.0.0.1:6379> ZREM myset three                     ## 移除元素
+(integer) 1
+127.0.0.1:6379> ZRANGE myset 0 -1
+1) "one"
+2) "two"
+127.0.0.1:6379> ZCARD myset                          ## 获取元素个数
+(integer) 2
+###################################################################################
+```
+
+# 三种特殊数据类型
+## Geospatial 地理位置
+> 推算地址位置的信息，两地之间的距离
+>
+> 底层的实现原理, 其实就是Zset！我们可以使用Zset命令来操作GEO
+>
+> http://www.jsons.cn/lngcode/
+
+```shell
+###################################################################################
+# GEOADD 添加地理位置
+127.0.0.1:6379> GEOADD china:city 16.405285 39.904989 beijing     ## 添加地理位置
+(integer) 1
+127.0.0.1:6379> GEOADD china:city 121.472644 31.231706 shanghai
+(integer) 1
+127.0.0.1:6379> GEOADD china:city 106.504962 29.533155 chongqing
+(integer) 1
+127.0.0.1:6379> GEOADD china:city 113.93029 22.53291 shenzhen 120.16922 30.24255 hangzhou
+(integer) 2
+127.0.0.1:6379> GEOADD china:city 109.21417 34.36665 xian
+(integer) 1
+###################################################################################
+# GEOPOS 获得当前的定位，是一个作标值!
+127.0.0.1:6379> GEOPOS china:city beijing
+1) 1) "16.40528351068496704"
+   2) "39.9049884229125027"
+127.0.0.1:6379> GEOPOS china:city beijing chongqing
+1) 1) "16.40528351068496704"
+   2) "39.9049884229125027"
+2) 1) "106.50495976209640503"
+   2) "29.53315530684997015"
+###################################################################################
+# GEODIST 获取两个给定位置之间的距离
+127.0.0.1:6379> GEODIST china:city beijing shanghai
+"8972677.9326"
+127.0.0.1:6379> GEODIST china:city beijing shanghai km
+"8972.6779"
+###################################################################################
+# GEORADIUS 以给定的经纬度为中心，找出某一半径内的元素
+127.0.0.1:6379> GEOPOS china:city beijing
+1) 1) "16.40528351068496704"
+   2) "39.9049884229125027"
+127.0.0.1:6379> GEORADIUS china:city 16 39 1000 km
+1) "beijing"
+127.0.0.1:6379> GEORADIUS china:city 16 39 10000 km
+1) "beijing"
+2) "chongqing"
+3) "xian"
+4) "shenzhen"
+5) "hangzhou"
+6) "shanghai"
+127.0.0.1:6379> GEORADIUS china:city 16 39 10000 km withdist
+1) 1) "beijing"
+   2) "106.5063"
+2) 1) "chongqing"
+   2) "8040.2107"
+3) 1) "xian"
+   2) "7939.4303"
+4) 1) "shenzhen"
+   2) "9101.5345"
+5) 1) "hangzhou"
+   2) "9033.9319"
+6) 1) "shanghai"
+   2) "9057.1212"
+###################################################################################
+# GEORADIUSBYMEMBER 找出位于指定元素周围的其它元素
+127.0.0.1:6379> GEORADIUSBYMEMBER china:city beijing 1000 km
+1) "beijing"
+127.0.0.1:6379> GEORADIUSBYMEMBER china:city beijing 10000 km
+1) "beijing"
+2) "chongqing"
+3) "xian"
+4) "shenzhen"
+5) "hangzhou"
+6) "shanghai"
+###################################################################################
+# 使用Zset命令来操作GEO
+127.0.0.1:6379> ZRANGE china:city 0 -1
+1) "beijing"
+2) "chongqing"
+3) "xian"
+4) "shenzhen"
+5) "hangzhou"
+6) "shanghai"
+127.0.0.1:6379> ZREM china:city beijing
+(integer) 1
+```
+
+## Hyperloglog
+> 基数统计算法
+
+```shell
+127.0.0.1:6379> PFADD mykey a b c d e f
+(integer) 1
+127.0.0.1:6379> PFADD mykey1 d e f g h i h
+(integer) 1
+127.0.0.1:6379> PFADD mykey1 d e f g h i
+(integer) 0
+127.0.0.1:6379> FLUSHALL
+OK
+127.0.0.1:6379> PFADD mykey a b c d e f
+(integer) 1
+127.0.0.1:6379> PFADD mykey1 d e f g h i
+(integer) 1
+127.0.0.1:6379> PFCOUNT mykey
+(integer) 6
+127.0.0.1:6379> PFCOUNT mykey1
+(integer) 6
+127.0.0.1:6379> PFMERGE mykey3 mykey mykey1
+OK
+127.0.0.1:6379> PFCOUNT mykey3
+(integer) 9
+```
+
+## Bitmaps
+```shell
+127.0.0.1:6379> SETBIT sign 0 1
+(integer) 0
+127.0.0.1:6379> SETBIT sign 1 0
+(integer) 0
+127.0.0.1:6379> SETBIT sign 2 1
+(integer) 0
+127.0.0.1:6379> GETBIT sign 2
+(integer) 1
+127.0.0.1:6379> BITCOUNT sign     ## 为1的数量
+(integer) 2
+```
+
+## 事务
+
+## Jedis
