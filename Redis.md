@@ -670,5 +670,140 @@ OK
 ```
 
 ## 事务
+> Redis 单条命令保证原子性,但是事务不保证原子性!
+>
+> Redis 事务没有隔离级别的概念!
+>
+> Redis 事务的本质：一组命令的集合! 一个事务中的所有命令都会被序列化，在事务执行的过程中，会按照顺序执行!
+>
+> 一次性，顺序性，排它性！执行一系列的命令！
 
-## Jedis
+Redis 的事务:
+- 开启事务(multi)
+- 命令入队(...)
+- 执行事务(exec)
+
+```shell
+127.0.0.1:6379> MULTI          ## 开启事务
+OK
+127.0.0.1:6379> SET k1 v1
+QUEUED
+127.0.0.1:6379> SET k2 v2
+QUEUED
+127.0.0.1:6379> GET k2
+QUEUED
+127.0.0.1:6379> EXEC           ## 开始执行
+1) OK
+2) OK
+3) "v2"
+127.0.0.1:6379> MULTI
+OK
+127.0.0.1:6379> SET k4 v4
+QUEUED
+127.0.0.1:6379> DISCARD        ## 取消事务
+OK
+127.0.0.1:6379> GET k4
+(nil)
+```
+
+> 命令有错（编译错误），事务中的所有命令都不会被执行！
+
+```redis
+127.0.0.1:6379> MULTI
+OK
+127.0.0.1:6379> SET k1 v1
+QUEUED
+127.0.0.1:6379> SET k2
+(error) ERR wrong number of arguments for 'set' command
+127.0.0.1:6379> SET k3 v3
+QUEUED
+127.0.0.1:6379> EXEC
+(error) EXECABORT Transaction discarded because of previous errors.
+127.0.0.1:6379> GET k1
+(nil)
+```
+
+> 运行时错误，如果事务队列中存在语法错误，其它命令可以被正常执行！
+
+```redis
+127.0.0.1:6379> MULTI
+OK
+127.0.0.1:6379> set k1 v1
+QUEUED
+127.0.0.1:6379> INCR k1
+QUEUED
+127.0.0.1:6379> EXEC
+1) OK
+2) (error) ERR value is not an integer or out of range
+127.0.0.1:6379> GET k1
+"v1"
+```
+
+> 监控！WATCH
+
+**悲观锁**
+- 很悲观，无论做什么都要进行加锁！
+
+**乐观锁**
+- 很乐观，不会上锁，只有在更新数据的时候去判断一下，在此期间是否有人修改过这个数据！
+
+
+> 正常执行成功
+
+```shell
+127.0.0.1:6379> SET money 100
+OK
+127.0.0.1:6379> SET out 0
+OK
+127.0.0.1:6379> WATCH money           ## 监视 money 对象
+OK
+127.0.0.1:6379> MULTI                 ## 事务正常结束，因为在事务执行期间money没有被变动过!
+OK
+127.0.0.1:6379> DECRBY money 20
+QUEUED
+127.0.0.1:6379> INCRBY out 20
+QUEUED
+127.0.0.1:6379> EXEC
+1) (integer) 80
+2) (integer) 20
+```
+
+> 不正常执行失败（多线程）
+
+```shell
+## 线程1
+127.0.0.1:6379> SET money 100
+OK
+127.0.0.1:6379> SET out 0
+OK
+127.0.0.1:6379> WATCH money
+OK
+127.0.0.1:6379> MULTI
+OK
+127.0.0.1:6379> DECRBY money 20
+QUEUED
+127.0.0.1:6379> INCRBY out 20       ## 在线程1执行EXEC命令前线程2先一步执行操作
+QUEUED
+127.0.0.1:6379> EXEC                ## 执行失败，因为money发生了变化
+(nil)
+
+## 线程2
+127.0.0.1:6379> GET money
+"100"
+127.0.0.1:6379> MULTI
+OK
+127.0.0.1:6379> EXEC
+(empty array)
+127.0.0.1:6379> SET money 10000
+OK
+```
+
+# Redis.conf 详解
+
+# Redis 持久化
+
+# Redis 发布订阅
+
+# Redis 主从复制
+
+# Redis 缓存穿透和雪崩
