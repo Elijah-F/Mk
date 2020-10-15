@@ -799,10 +799,190 @@ OK
 ```
 
 # Redis.conf 详解
+> 单位
+
+```redis
+# 1k => 1000 bytes
+# 1kb => 1024 bytes
+# 1m => 1000000 bytes
+# 1mb => 1024*1024 bytes
+# 1g => 1000000000 bytes
+# 1gb => 1024*1024*1024 bytes
+#
+# units are case insensitive so 1GB 1Gb 1gB are all the same.
+```
+
+> INCLUDES
+
+```redis
+# include /path/to/local.conf
+# include /path/to/other.conf
+```
+
+> NETWORK
+
+```redis
+bind 127.0.0.1        ## 绑定的ip
+protected-mode yes    ## 保护模式
+port 6379             ## 绑定端口
+```
+
+> GENERAL
+
+```redis
+daemonize yes                                 ## 是否以守护进程方式运行
+pidfile /var/run/redis_6379.pid               ## 后台运行时需要制定一个pid文件
+
+# Specify the server verbosity level.
+# This can be one of:
+# debug (a lot of information, useful for development/testing)
+# verbose (many rarely useful info, but not a mess like the debug level)
+# notice (moderately verbose, what you want in production probably)  ## 生产环境
+# warning (only very important / critical messages are logged)
+loglevel notice
+logfile ""                      ## 日志文件位置
+databases 16                    ## 默认数据库数量
+always-show-logo yes            ## 是否总是显示LOGO
+```
+
+> SNAPSHOTTING
+Redis 是内存数据库，如果没有持久化，数据断电及失！
+
+```redis
+save 900 1               ## 900s内至少有一个可以进行了修改，则进行持久化操作!
+save 300 10
+save 60 10000
+
+stop-writes-on-bgsave-error yes         ## 如果持久化出错是否继续工作
+rdbcompression yes                      ## 是否压缩rdb文件
+rdbchecksum yes                         ## 保存rdb文件时，进行校验
+dir /var/lib/redis/                     ## rdb文件保存的目录
+```
+
+> REPLICATION
+
+> SECURITY
+
+```redis
+127.0.0.1:6379> CONFIG GET requirepass              ## 默认没有密码
+1) "requirepass"
+2) ""
+127.0.0.1:6379> CONFIG SET requirepass "123456"     ## 设置密码为123456
+OK
+127.0.0.1:6379> CONFIG GET requirepass
+1) "requirepass"
+2) "123456"
+127.0.0.1:6379> exit
+
+18:16:03 hero @ archlinux ω ~
+λ redis-cli -p 6379
+127.0.0.1:6379> CONFIG GET requirepass              ## 没有权限
+(error) NOAUTH Authentication required.
+127.0.0.1:6379> AUTH 123456                         ## 密码登陆
+OK
+127.0.0.1:6379> CONFIG GET requirepass
+1) "requirepass"
+2) "123456"
+```
+
+> CLIENTS
+
+```redis
+maxclients 10000               ## 连接Redis的最大客户端数量
+maxmemory <bytes>              ## Redis配置最大的内存容量
+maxmemory-policy noeviction    ## 内存达到上限后的处理策略
+```
+
+> APPEND ONLY
+
+```redis
+appendonly no                      ## 默认不开启aof模式，默认使用rdb方式持久化！
+appendfilename "appendonly.aof"    ## 持久化的文件名
+
+# appendfsync always               ## 每次修改都会sync
+appendfsync everysec               ## 每秒执行一次sync，只可能丢失1s的数据
+# appendfsync no                   ## 不执行sync，操作系统自己同步数据，速度最快！
+```
 
 # Redis 持久化
+> Redis 是内存数据库，如果不将内存中的数据保存到磁盘，那么一旦服务器进程退出，数据也会跟着消失！
+
+## RDB(Redis DataBase)
+> 什么是 RDB
+
+在指定的时间间隔内将内存中的数据集快照写入磁盘，即Snapshot快照，它恢复时是将快照文件直接读到内存中。
+
+Redis 会单独fork一个子进程来进行持久化，会先将数据写入到一个临时文件中，待持久化过程都结束了，再用这个临时文件替换上次持久化好的文件。整个过程中，主进程不进行任何IO操作。这就确保了及高的性能。如果需要进行大规模数据的恢复，且对于数据恢复的完整性不是非常敏感，那RDB方式要比AOF方式更加的高效。RDB的缺点是最后一次持久化后的数据可能会丢失。默认情况下采用RDB方式进行持久化。
+
+RDB 保存的文件是dump.rdb（可以在配置文件中进行配置）
+```redis
+dbfilename dump.rdb
+```
+
+> 触发机制
+
+1. save 的规则满足的情况下，触发rdb规则
+2. 执行 FLUSHALL 命令也会触发rdb规则
+3. 退出Redis，也会产生rdb文件
+
+> 如何恢复rdb文件！
+
+1. 只需要将rdb文件放在Redis启动目录即可，Redis启动的时候会自动检查dump.rdb，恢复其中的数据！
+2. 查看启动目录位置
+```redis
+127.0.0.1:6379> CONFIG GET dir
+1) "dir"
+2) "/var/lib/redis"
+```
+
+> 优缺点
+
+1. 适合大规模的数据恢复，并且对数据的完整性要求不高的场景！
+2. 每次持久化都会间隔一定的时间，因此如果Redis宕机了，最后一次修改的数据就没了！
+3. fork进程会占用一定的内存空间！
+
+## AOF(Append Only File)
+> 将我们的所有命令都记录下来，恢复的时候就将所有历史命令重新执行一遍！
+
+以日志的形式来记录每个写操作，将Redis执行过的所有指令都记录下来（读操作不记录），只允许追加文件但不可以改写文件，Redis启动之处会读取该文件重新构建数据。换言之，Redis重启的话就根据日志文件的内容将写指令从前到后重新执行一次以完成数据的恢复工作！
+
+AOF 保存的是 appendonly.aof 文件
 
 # Redis 发布订阅
+> Redis 发布订阅是一种消息通信模型，发送者发送消息，订阅者接收消息！
+>
+> Redis 客户端可以订阅任意数量的频道！
+
+```redis
+# 线程1，订阅了一个叫做 channel1 的频道
+127.0.0.1:6379> SUBSCRIBE channel1
+Reading messages... (press Ctrl-C to quit)
+1) "subscribe"
+2) "channel1"
+3) (integer) 1
+1) "message"          ## 消息
+2) "channel1"         ## 来自哪个频道
+3) "hello world!"     ## 消息内容
+1) "message"
+2) "channel1"
+3) "what the fuck!"
+
+# 线程2, 发布消息
+127.0.0.1:6379> PUBLISH channel1 "hello world!"
+(integer) 1
+127.0.0.1:6379> PUBLISH channel1 "what the fuck!"
+(integer) 1
+```
+
+> 原理
+
+Redis 通过 PUBLISH, SUBSCRIBE, PSUBSCRIBE 等命令实现发布的订阅功能！
+
+通过 SUBSCRIBE 命令订阅某频道后，redis-server 里维护了一个字典，字典哦键就是一个个频道！而字典的值则是一个链表，链表中保存了所有订阅这个 channel 的客户端，SUBSCRIBE 命令的关键就是将客户端添加到给定 channel 的订阅链表中！
+
+通过 PUBLISH 命令向所有订阅者发送消息，redis-server 会使用给定的频道作为键，在它所维护的 channel 字典中查找记录了订阅这个频道的所有客户端的链表，遍历这个链表，将消息发布给所有订阅者。
+
+应用场景：普通的即时聊天，群聊等功能，订阅关注系统！
 
 # Redis 主从复制
 
