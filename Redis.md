@@ -988,5 +988,195 @@ Redis 通过 PUBLISH, SUBSCRIBE, PSUBSCRIBE 等命令实现发布的订阅功能
 应用场景：普通的即时聊天，群聊等功能，订阅关注系统！
 
 # Redis 主从复制
+## 概念
+主从复制，是指将一台Redis服务器的数据，复制到其他的Redis服务器，前者称为主节点（master/leader），后者称为从节点（slave/follower）数据的复制是单向的，只能由主节点到从节点。Master以写为主，Slave以读为主。
+
+默认情况下每台Redis服务器都是主节点;且一个主节点可以有多个从节点（或者没有），但一个从节点只能有一个主节点。
+
+**主从复制的作用主要包括：**
+1. 数据冗余：主从复制实现了数据的热备份，是持久化之外的一种数据冗余方式。
+2. 故障恢复：当主节点出现问题时，可以由从节点提供服务，实现快速的故障恢复。
+3. 负载均衡：在主从复制的基础上，配合读写分离，可以由主节点提供写服务，由从节点提供读服务，分担服务器伏在。尤其是在写少读多的场景下，通过多个节点分担读负载，可以大大提高Redis服务器的并发量。
+4. 高可用基石：主从复制是哨兵和集群能够实施的基础。
+
+## 环境配置
+> 只配置从库，不配置主库(主库默认是master)
+
+```redis
+127.0.0.1:6379> info replication        ## 查看信息
+# Replication
+role:master
+connected_slaves:0
+master_replid:3114a23fe5c11033436027f9bd57cc371ab633f9
+master_replid2:0000000000000000000000000000000000000000
+master_repl_offset:0
+second_repl_offset:-1
+repl_backlog_active:0
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:0
+repl_backlog_histlen:0
+```
+
+准备三个redis.conf文件,并修改对应信息
+1. 端口
+2. pid文件名
+3. log文件名
+4. dump.rdb文件名
+
+```shell
+λ sudo redis-server ./redis6379.conf
+λ sudo redis-server ./redis6380.conf
+λ sudo redis-server ./redis6381.conf
+
+λ ps -ef | rg redis
+/home/hero/.ripgreprc: No such file or directory (os error 2)
+root        8124       1  0 15:37 ?        00:00:00 redis-server 127.0.0.1:6379
+root        8252       1  0 15:37 ?        00:00:00 redis-server 127.0.0.1:6380
+root        8299       1  0 15:37 ?        00:00:00 redis-server 127.0.0.1:6381
+hero        8323    3370  0 15:37 pts/2    00:00:00 rg redis
+```
+
+## 一主二从
+> 默认情况下每台Redis服务器都是主节点，一般情况下只需要配置从机就好了!
+
+```redis
+λ redis-cli -p 6380
+127.0.0.1:6380> REPLICAOF 127.0.0.1 6379       ## 绑定主机
+OK
+127.0.0.1:6380> info replication
+# Replication
+role:slave                                     ## 成为从机
+master_host:127.0.0.1                          ## 主机信息
+master_port:6379
+master_link_status:up
+master_last_io_seconds_ago:8
+master_sync_in_progress:0
+slave_repl_offset:14
+slave_priority:100
+slave_read_only:1
+connected_slaves:0
+master_replid:85982c42e1db05a74537ca173f6fd1dd7f346f4f
+master_replid2:0000000000000000000000000000000000000000
+master_repl_offset:14
+second_repl_offset:-1
+repl_backlog_active:1
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:1
+repl_backlog_histlen:14
+
+## 在主机中查看
+127.0.0.1:6379> info replication
+# Replication
+role:master
+connected_slaves:2
+slave0:ip=127.0.0.1,port=6380,state=online,offset=98,lag=1   ## 从机信息
+slave1:ip=127.0.0.1,port=6381,state=online,offset=98,lag=1
+master_replid:85982c42e1db05a74537ca173f6fd1dd7f346f4f
+master_replid2:0000000000000000000000000000000000000000
+master_repl_offset:98
+second_repl_offset:-1
+repl_backlog_active:1
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:1
+repl_backlog_histlen:98
+```
+可以直接从配置文件中来修改 `\# replicaof <masterip> <masterport>`，达到永久更改的目的。
+
+> 细节
+
+主机可以写可以读，从机不能写只能读！主机中的所有信息和数据，都会自动被从机保存！
+
+如果主机down掉，只要能重新连接则可继续使用!
+
+如果从机down掉，重新连接会恢复默认的master模式，重新绑定主机后则可继续使用并且拥有主机所有数据！
+
+> 复制原理
+
+Slave 启动成功连接到 Master 后会发送一个 sync 同步命令
+
+Master 接到命令后，启动后台的存盘进程，同时收集所有接收到的用于修改数据集的命令，在后台执行我完毕之后，Master 将传送整个数据文件到 Slave，并完成一次完全同步!
+
+全量复制：Slave 在接收到数据库文件数据后，将其存盘并加载到内存中。
+
+增量复制：Master 继续将新的所有收集到的修改命令依次传给slave，完成同步。
+
+但是只要是重新连接 Master，一次完全同步（全量复制）将被自动执行！我们的数据一定可以在从机中看到！
+
+
+> 层层链路: Master 挂了，手动配置
+
+层层链路：让第一个 Slave 作第二个 Slave 的 Master!
+
+```redis
+## 6379 => 6380 => 6381
+## 此时6379(Master)挂了
+127.0.0.1:6380> REPLICAOF no one       ## 成为主机，它后面的Slave则成为它的从机
+OK
+127.0.0.1:6380> info replication
+# Replication
+role:master
+connected_slaves:1
+slave0:ip=127.0.0.1,port=6381,state=online,offset=4266,lag=1
+master_replid:9f8093c8ec5e95c3cc177cb327d6419736de162f
+master_replid2:85982c42e1db05a74537ca173f6fd1dd7f346f4f
+master_repl_offset:4266
+second_repl_offset:4267
+repl_backlog_active:1
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:1
+repl_backlog_histlen:4266
+```
+
+## 哨兵模式
+> 概述
+
+主从切换技术的方法是：当主服务器宕机后，需要手动把一台从服务器切换为主服务器，这就需要人工干预，费时费力，还会造成一段时间内服务不可用。这不是一种推荐的方式，更多时候，我们优先考虑哨兵模式。Redis 从2.8开始正式提供了Sentinel（哨兵）架构来解决这个问题！
+
+谋朝篡位的自动版，能够后台监控主机是否故障，如果故障了根据票数自动将从库转换为主库！
+
+
 
 # Redis 缓存穿透和雪崩
+Redis 缓存的使用，极大的提升了应用程序的性能和效率，特别是数据查询方面。但同时也带来一些问题。其中最要害的问题就是数据的一致性问题，从严格意义上讲，这个问题无解！如果对数据的一致性要求很高，那么就不能使用缓存。
+
+另外的一些典型问题就是，缓存穿透、缓雪崩和缓存击穿。
+
+## 缓存穿透(查不到)
+> 概念
+
+用户想要查询一个数据，发现Redis内存数据库没有，也就是缓存没有命中，于是向持久层数据库查询，发现也没有，于是本次查询失败！当用户很多的时候，缓存都没有命中，于是都去请求了持久层的数据库。这会给持久层数据库造成很大的压力，这时候就相当于出现了缓存穿透。
+
+> 解决方案
+
+**布隆过滤器**
+
+布隆过滤器 是一种数据结构，对所有可能查询的参数以hash形式存储，在控制层先进行校验，不符合则丢弃，从而避免了对底层存储系统的查询压力！
+
+存在的问题：
+1. 如果空值能够被缓存起来，这就意味着缓存需要更多的空间存储更多的键，因为这当中可能会有很多的空值的键。
+2. 即使对空值设置了过期时间，还是会存在缓存层和存储层的数据会有一段时间的窗口不一致，这对于需要保持一致性的业务会有影响。
+
+
+## 缓存击穿(查的多)
+> 概述
+
+是指一个key非常热点，在不停的扛着大并发，大并发集中对这一个点进行访问，当这个key在失效的瞬间，持续的大并发就穿破缓存，直接请求数据库，就像在一个屏幕上凿开了一个洞。
+
+当某个key在过期的瞬间，有大量的请求并发访问，这类数据一般是热点数据，由于缓存过期，就会同时访问数据库来查询最新数据，并写回缓存，会导致数据库瞬间压力过大。
+
+> 解决方案
+
+**设置热点数据永不过期**
+
+从缓存层面来看，所没有设置过期时间，所以不会出现热点key过期后产生的问题。
+
+**加互斥锁**
+
+分布式锁：使用分布式锁，保证对于每个key同时只有一个线程去查询后端服务，其他线程没有获得分布式锁的权限，因此只需要等待即可。这种方式将高并发的压力转移到了分布式锁，因此对分布式锁的考验很大。
+
+## 缓存雪崩
+> 概述
+
+缓存雪崩，是指在某一个时间段，缓存集中过期失效。
+
+比如：在双十一零点的时候，来了一波抢购，这波商品时间比较集中的放入了缓存，假设缓存一个小时，那么到了凌晨一点的时候，这批商品的缓存都过期了，而对这批商品的访问查询都落到了数据库上，对于数据库而言，就会产生周期性的压力波峰。于是所有的请求都会达到存储层，存储层的调用量会暴增，造成存储层也会挂掉的情况。
